@@ -124,7 +124,7 @@ orf_fname = "../FluGenomes/xlator_data/H1N1FULL.orf"
 h1n1 = influenza(genome_fname,orf_fname)
 
 genetic_code = CodonTable.standard_dna_table.forward_table
-stop_codons = dict([ (codon,'STOP') for codon in CodonTable.standard_dna_table.stop_codons ])
+stop_codons = dict([ (codon,'*') for codon in CodonTable.standard_dna_table.stop_codons ])
 # make genetic code contain both 61 aacid codons and 3 stop codons ...
 genetic_code.update(stop_codons)
 

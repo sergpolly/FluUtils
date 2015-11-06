@@ -53,10 +53,15 @@ def get_dKD(aa_from,aa_to):
 
 
 def plot_dKD(snp_type,all_dKD,bins=50):
+	data = np.asarray(all_dKD[snp_type])
 	plt.clf()
-	plt.hist(all_dKD[snp_type],bins=bins)
-	plt.title(snp_type)
-	plt.xlabel('delta_KD')
+	plt.hist(data,bins=bins)
+	ax = plt.gca()
+	the_mean = data.mean()
+	the_std = data.std()
+	ax.text(0.75,0.9,"mean: %.3f\nstd:   %.3f"%(the_mean,the_std),transform=ax.transAxes)
+	ax.set_title(snp_type)
+	ax.set_xlabel('delta_KD')
 	plt.savefig(snp_type+'.pdf')
 
 

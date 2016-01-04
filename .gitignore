@@ -1,5 +1,8 @@
 # my additions ...
 *.pdf
+*.afa
+*.html
+*.htm
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

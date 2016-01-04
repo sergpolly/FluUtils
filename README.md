@@ -1,7 +1,7 @@
 # FluUtils
-assorted flu utils
+assorted flu utils and analyses
 
-So far just a couple of analysis:
+So far just a couple of analyses:
 
 1) Generate all nucleotide substitutions in the H1N1 genome and analyze delta-KD for various nt-substitution types.
 Example: What's average dKD for the A->G substitution?. Has something to do with the mutational bias observed under Favipiravir (mutagen) treatment.

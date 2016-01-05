@@ -10,9 +10,9 @@ import numpy as np
 # import time
 
 
-absolute_threshold = 22
+absolute_threshold = 20
 delta_coefficient = 0.333
-defect_seq_limit = 5
+# defect_seq_limit = 5
 
 
 # given an array of integer values, it creates a histogramm (dictionary) ...
@@ -28,8 +28,14 @@ def hamming(seq1,seq2):
     assert len(seq1)==len(seq2)
     return sum(letter1!=letter2 for letter1,letter2 in zip(seq1,seq2))
 
-
+########################################################
+# well calibrated function at this point ...
 def get_aligned_pos(sequence,primer,direction='forward'):
+    """ Returns START or STOP positions of the putative coding sequence.
+    START is returned for 'forward' direction, while STOP is for 'backwards' direction.
+    Both positions coordinates are in the original sequence reference frame.
+    Original sequence can shorter/longer(with UTRs)/equal to the coding sequence.
+    Thus START and STOP can be either negative ot exceed the lengths of the original sequence respectively."""
     primer_len = len(primer)
     seq_len = len(sequence)
     delta_threshold = primer_len*delta_coefficient
@@ -55,8 +61,9 @@ def get_aligned_pos(sequence,primer,direction='forward'):
         #
         if crit1 and crit2 and crit3:
             # print "Position %d does qualify!"%frame
-            return (frame-primer_len) if direction=='forward' else frame
             return (frame-primer_len) if direction=='forward' else (frame+primer_len-1)
+            # START and STOP positions are returned here
+            # see FluUtils wiki for illsutrations.
     ####################################
     # if nothing happened, then it's bad ...
     print sequence.id
@@ -110,10 +117,11 @@ def get_primers(fname):
     return (left_seq, right_seq)
 
 
-
-
+####################################################################################
+# DATA SOURCES AND USER INOUT SECTION ...
+####################################################################################
 path = "/home/venevs/fludb_pH1N1"
-#
+######################
 if len(sys.argv)<4:
     print "Call signature: \"%s  in_seq_fname  out_aligned_fname  in_primer_fname\""%sys.argv[0]
     sys.exit(1)
@@ -127,45 +135,46 @@ array_of_seq = SeqIO.to_dict(array_of_seq)
 sorted_sequences_keys = sorted(array_of_seq)
 #######################
 primer3, primer5 = get_primers(primer_fname)
+####################################################################################
+####################################################################################
+
 
 ###############################################################
 # CALCULATING START & STOP OF THE CODING REGION ...           #
-# ALSO DO SOME OFFSET CALCULATIONS FOR OFFSETS ASSIGNMENT ... #
+# ALSO GET THE LENGTH OF THE PUTATIVE CODING SEQUENCE ...     # 
 ###############################################################
 defect_seq_keys = []
-left_off  = []
-right_off = []
+coding_start_pos  = []
+coding_stop_pos = []
 codlen = []
 seqlen = []
 for i in sorted_sequences_keys:
     ref_seq = array_of_seq[i]
     ref_seq_len = len(ref_seq)
-    start   = get_aligned_pos(ref_seq,primer3,'forward')
-    end     = get_aligned_pos(ref_seq,primer5,'backward')
+    start = get_aligned_pos(ref_seq,primer3,'forward')
+    stop  = get_aligned_pos(ref_seq,primer5,'backward')
     ####################################
-    if (start is None) or (end is None):
+    if None in [start,stop]:
         print "Sequence %s is defetive regardless of any futher analysis ..."%i
         defect_seq_keys.append(i)
-        # print end-start,start,end
-        left_off.append(0)     
-        right_off.append(0)    
+        # print stop-start,start,stop
+        coding_start_pos.append(0)     
+        coding_stop_pos.append(0)    
         codlen.append(0)     
         seqlen.append(0)
     else:     
-        # print end-start,start,end
-        left_off.append(start-0 +1) # +1 whenever there is delta ...
-        right_off.append(ref_seq_len-end +1) # +1 whenever there is delta ...
-        codlen.append(end-start +1) # +1 whenever there is delta ...
+        # print stop-start,start,stop
+        coding_start_pos.append(start)
+        coding_stop_pos.append(stop)
+        codlen.append(stop - start + 1)
         seqlen.append(ref_seq_len)
 ############################
-max_left_off  = max(left_off)
-max_right_off = max(right_off)
 
 
 ###############################################################################
 ### DEALING WITH "BAD" SEQUENCES ...
 ###############################################################################
-# assuming all intermediate parts are of equal size ...
+# assuming all intermediate parts are of equal size, which isn't the 100% case ...
 the_len_hist = int_hist(codlen)
 if len(the_len_hist) > 1:
     print "Length variation of the coding part detected ..."
@@ -174,43 +183,96 @@ if len(the_len_hist) > 1:
 # sort histogram by values, and get the least populated lengths (the outliers or defects) ...
 lens_of_defects = sorted(the_len_hist, key=the_len_hist.get)[:-1]
 # most populated length ...
-popular_lens = sorted(the_len_hist, key=the_len_hist.get)[-1]
+most_popular_length = sorted(the_len_hist, key=the_len_hist.get)[-1]
 ##########################
 defect_seq_num = sum(the_len_hist[val] for val in lens_of_defects)
-if defect_seq_num < defect_seq_limit:
-    print "There are only %d defect sequences. Neglect them and proceed ..."%defect_seq_num
-    # find all defective sequecnes ...
-    for idx,l in enumerate(codlen):
-        if l in lens_of_defects:
-            defect_seq_keys.append(sorted_sequences_keys[idx])
-else:
-    print "There are %d defect sequences. Too much to proceed, but we'll try ..."%defect_seq_num
-    # find all defective sequecnes ...
-    for idx,l in enumerate(codlen):
-        if l in lens_of_defects:
-            print l,popular_lens,sorted_sequences_keys[idx]
-            defect_seq_keys.append(sorted_sequences_keys[idx])
+print "There are %d defect sequences. Neglect them and proceed ..."%defect_seq_num
+# find all defective sequecnes ...
+for idx,l in enumerate(codlen):
+    if l in lens_of_defects:
+        print idx,':',l,most_popular_length,sorted_sequences_keys[idx]
+        defective_key_to_add = sorted_sequences_keys[idx]
+        # add the key if it isn't there yet ...
+        if defective_key_to_add not in defect_seq_keys:
+            defect_seq_keys.append(defective_key_to_add)
 #############################
 
-# DO ALIGNMENT AT THIS POINT ...
-#############################
+
+######################################
+# CODING PART ALIGNEMNT ...
 seq_aligned = []
+aligned_counter = 0
 for i,cid in enumerate(sorted_sequences_keys):
     # avoid defective sequences altogether ...
     if cid not in defect_seq_keys:
         seq = array_of_seq[cid]
-        the_left_off = left_off[i]
-        the_right_off = right_off[i]
-        seq_len = len(seq)
-        left_add = ''.join('-' for j in range(max_left_off - the_left_off))
-        right_add = ''.join('-' for j in range(max_right_off - the_right_off))
+        seq_string = str(seq.seq)
+        seq_len = len(seq_string)
+        # start and stop positions ...
+        c_start = coding_start_pos[i]
+        c_stop = coding_stop_pos[i]
+        # 4 different case are possible:
+        if c_start>=0 and c_stop<seq_len:
+            # get the sequence between start and stop inclusively ...
+            sequence_aligned = Seq.Seq(seq_string[c_start:c_stop+1])
+        elif c_start<0 and c_stop<seq_len:
+            # get the sequence till stop inclusively and add left gaps #=|c_start| by definition ...
+            left_offset_gaps = ''.join( '-' for g in range(abs(c_start)) )
+            sequence_aligned = Seq.Seq(left_offset_gaps + seq_string[:c_stop+1])
+        elif c_start>=0 and c_stop>=seq_len:
+            # get the sequence from star inclusively and add right gaps #=c_stop-seq_len+1 by definition ...
+            right_offset_gaps = ''.join( '-' for g in range(c_stop-seq_len+1) )
+            sequence_aligned = Seq.Seq( seq_string[c_start:] + right_offset_gaps)
+        elif c_start<0 and c_stop>=seq_len:
+            # get the whole sequence with left and right gaps added:
+            # # of gaps left  = |c_start| by definition ...
+            # # of gaps right = c_stop-seq_len+1 by definition ...
+            left_offset_gaps = ''.join( '-' for g in range(abs(c_start)) )
+            right_offset_gaps = ''.join( '-' for g in range(c_stop-seq_len+1) )
+            sequence_aligned = Seq.Seq(left_offset_gaps + seq_string[:] + right_offset_gaps)
         ################################
-        sequence_aligned = Seq.Seq(left_add+str(seq.seq)+right_add)
         seq_aligned.append( SeqRecord.SeqRecord(sequence_aligned,id=seq.id) )
-#
-# OUTPUT ...
-#
+        aligned_counter += 1
+        ######################################
+        # the_left_off = coding_start_pos[i] #
+        # the_right_off = coding_stop_pos[i] #
+        ######################################
+print
+print "%d sequences have been successfully aligned out of %d."%(aligned_counter,len(sorted_sequences_keys))
 SeqIO.write(seq_aligned,aligned_fname,"fasta")
+
+
+
+# ###############################################
+# # UNDER CONSTRUCTION ...
+# # UTR UTR UTR UTR UTR UTR UTR UTR UTR  ...
+# ###############################################
+# # do UTR alignemnt separately ...
+# # DO ALIGNMENT AT THIS POINT ...
+# #############################
+# seq_aligned = []
+# for i,cid in enumerate(sorted_sequences_keys):
+#     # avoid defective sequences altogether ...
+#     if cid not in defect_seq_keys:
+#         seq = array_of_seq[cid]
+#         the_left_off = coding_start_pos[i]
+#         the_right_off = coding_stop_pos[i]
+#         seq_len = len(seq)
+#         left_add = ''.join('-' for j in range(max_left_off - the_left_off))
+#         right_add = ''.join('-' for j in range(max_right_off - the_right_off))
+#         ################################
+#         sequence_aligned = Seq.Seq(left_add+str(seq.seq)+right_add)
+#         seq_aligned.append( SeqRecord.SeqRecord(sequence_aligned,id=seq.id) )
+# #
+# # OUTPUT ...
+# #
+# SeqIO.write(seq_aligned,aligned_fname,"fasta")
+#
+#
+#
+# 
+# # max_left_off  = max(coding_start_pos)
+# # max_right_off = max(coding_stop_pos)
 
 
 

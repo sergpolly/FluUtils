@@ -223,7 +223,14 @@ x_top_ticknames = enrichment_delta['dgnp'].reshape(heat_array_shape)[:,0]
 x_top_ticknames = x_top_ticknames[range(dg_list_num-1,heat_array_shape[0],dg_list_num)]
 
 
-
+# plot that heat map ...
+plot_heatmap(heat_data,
+				heat_pvals,
+				heat_array_shape,
+				loci_groups_num,
+				(x_ticknames,x_top_ticknames),
+				y_ticknames,
+				"out_fname")
 
 
 

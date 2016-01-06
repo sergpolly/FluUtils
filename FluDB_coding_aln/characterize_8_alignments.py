@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 
 
-# columns = ['name','seg','pos']
+# potential interesting columns = ['name','seg','pos']
 seg_num = 8
-name = 'test1'
+# name = 'test1'
 
 # typical fname for segment alignemnt ...
 aligned_seg_fname = lambda number: "seg%d.afa"%number

@@ -1,6 +1,7 @@
 # import re
 import os
 import sys
+import copy
 # from Bio import Seq
 # from Bio import SeqIO
 from Bio import SeqRecord
@@ -32,6 +33,7 @@ KD['*'] = 25.0
 # # columns = ['name','seg','pos','description']
 # seg_num = 8
 # name = 'test1'
+out_fname = 'test_loci.txt'
 #
 ########################################################
 # reference loading ...
@@ -89,15 +91,9 @@ def get_loci_orf_assoc(orf,loci):
 
 
 
-# let's gather overall statistics ...
-codon_position_mutated = []
-codon_position_mutated_weight = []
-
-dKD = []
-dKD_weight = []
 
 
-
+seg_aln_info = {}
 # as all of the alignments are loaded ...
 # come up with some criteria for loci of interest ...
 # let's get some brief statistical info at first ...
@@ -106,71 +102,84 @@ for seg in sorted(segment_aln):
     aln = pd.DataFrame(aln)
     # replace gaps with None, so pd.isnull is the way to check gaps ...
     aln = aln.where(aln!='-',None)
-    # features of interest ...
-    descr = aln.describe()
-    # count unique top freq
-    # descr.loc['top'] - is a consensus sequence
-    descr.loc['freq_ratio'] = descr.loc['freq']/descr.loc['count'] # freq_ratio ignores gaps ...
-    descr.loc['gaps'] = aln.isnull().sum()
-    #
-    # number of variable positions ...
-    pos_with_var = descr.loc['freq']<descr.loc['count']
-    print "There are %d variable positions to investigate for segment %s"%(pos_with_var.sum(),seg)
+    aln_descr = aln.describe().transpose()
+    aln_descr['freq_ratio'] = aln_descr['freq']/aln_descr['count'] # freq_ratio ignores gaps ...
+    aln_descr['gaps'] = aln.isnull().sum()
+    aln_descr['variation'] = aln_descr['freq']<aln_descr['count']
+    print "%s: %d variable positions"%(seg, aln_descr['variation'].sum())
     # position indeces ...
-    pos_ids = aln.loc[:,pos_with_var].columns
+    loci_variable = aln_descr[aln_descr['variation']].index
     # ORF of this segment ...
-    seg_orf = ph1n1.orf[seg+'_pH1N1']
-    seg_seq = ph1n1.genome[seg+'_pH1N1']
-    #
-    for pos in pos_ids:
+    ref_seg_orf = ph1n1.orf[seg+'_pH1N1']
+    ref_seg_seq = ph1n1.genome[seg+'_pH1N1']
+    # detailed SNP info storage ...
+    detailed_snp_info = {}
+    detailed_snp_info['genome_pos'] = []
+    detailed_snp_info['nt_ref'] = []
+    detailed_snp_info['nt_snp'] = []
+    detailed_snp_info['snp_freq'] = []
+    detailed_snp_info['product'] = []
+    detailed_snp_info['codon_shift'] = []
+    detailed_snp_info['codon_ref'] = []
+    detailed_snp_info['codon_snp'] = []
+    detailed_snp_info['codon_pos'] = []
+    # go over all genomic loci to gather SNPs information ...
+    for pos in loci_variable:
         # unpack codon information ...
-        prod_codon = get_loci_orf_assoc(seg_orf,pos)
+        prod_codon = get_loci_orf_assoc(ref_seg_orf,pos)
         for product in prod_codon:
             codon_idx, codon_shift, codon_coords = prod_codon[product]
-            # the consensus codon, AA and KD ...
-            codon_itself = ''.join(seg_seq[i] for i in codon_coords)
-            aa_itself = genetic_code[codon_itself]
-            KD_itself = KD[aa_itself]
-            # SNPs at this position ...
+            # the reference codon (as a list, first)...
+            codon_ref = [ref_seg_seq[i] for i in codon_coords]
+            # reference nucleotide and SNPs at this position ...
+            nt_ref = codon_ref[codon_shift] # = aln_descr['top'][pos] = ref_seg_seq[pos]
             nts_present = aln.loc[:,pos].value_counts().to_dict()
-            ############################################
-            # CODON SHIFT STATISTICS GATHERING ...
-            codon_position_mutated.append(codon_shift)
-            # non-consensus percent, same as 1.0-descr.loc['freq_ratio',pos]
-            weight = sum(sorted(nts_present.values())[:-1])*1.0/sum(nts_present.values())
-            assert abs(weight - (1.0-descr.loc['freq_ratio',pos]))<0.00000001
-            codon_position_mutated_weight.append(weight)
-            # CODON SHIFT STATISTICS GATHERING ...
-            ############################################
-            #
             # hence, possible codons are:
-            possible_codons = []
-            for snp in nts_present:
-                mut_codon = list(codon_itself)
-                mut_codon[codon_shift] = snp
-                possible_codons.append(mut_codon)
-                # STATISTICS GATHERING ...
-                the_alt_codon = ''.join(mut_codon)
-                if the_alt_codon != codon_itself:
-                    the_alt_aa = genetic_code[the_alt_codon]
-                    the_alt_KD = KD[the_alt_aa]
-                    weight     = nts_present[snp]*1.0/sum(nts_present.values())
-                    #
-                    dKD.append(the_alt_KD - KD_itself)
-                    dKD_weight.append(weight)
-            # # amino acids ...
-            # print "Product %s, position %d in protein (codon %s, aa %s)"%(product, codon_shift+1, codon_itself, genetic_code[codon_itself])
-            # other_possible_codons = [''.join(codon) for codon in possible_codons if ''.join(codon)!=codon_itself]
-            # print "outcome AAs are: %s"%str([genetic_code[ccc] for ccc in other_possible_codons]).strip('[]').replace('\'','')
-            # # print str([genetic_code[ccc] for ccc in other_possible_codons]).strip('[]').replace('\'','')
-            # print "dKD for AA subs: %s"%str([ KD[genetic_code[ccc]]-KD[genetic_code[codon_itself]] for ccc in other_possible_codons]).strip('[]')
+            for nt_snp in nts_present:
+                if nt_snp != nt_ref:
+                    codon_snp = copy.deepcopy(codon_ref)
+                    codon_snp[codon_shift] = nt_snp
+                    # at the innermost level let's gather detailed SNP info here ...
+                    detailed_snp_info['genome_pos'].append(pos)
+                    detailed_snp_info['nt_ref'].append(nt_ref)
+                    detailed_snp_info['nt_snp'].append(nt_snp)
+                    detailed_snp_info['snp_freq'].append(nts_present[nt_snp])
+                    detailed_snp_info['product'].append(product)
+                    detailed_snp_info['codon_shift'].append(codon_shift)
+                    detailed_snp_info['codon_ref'].append(''.join(codon_ref))
+                    detailed_snp_info['codon_snp'].append(''.join(codon_snp))
+                    detailed_snp_info['codon_pos'].append(codon_idx)
+    ###################################################################################
+    detailed_snp_info = pd.DataFrame(detailed_snp_info)
+    # SNPs information is gathered ...
+    # let's merge 'aln_descr' and 'detailed_snp_info' dataframes
+    seg_aln_info[seg] = pd.merge(aln_descr,detailed_snp_info,left_index=True,right_on='genome_pos',how='outer').reset_index(drop=True)
 
 
 
-        
+
+for seg in seg_aln_info:
+    # aln_info is merely a reference to object
+    # so, changing stuff by ref, will change the object itself ...
+    seg_aln_info[seg] = seg_aln_info[seg].reset_index(drop=True)
+    aln_info = seg_aln_info[seg]
+    aln_info['genome_pos'] = aln_info['genome_pos'].astype('int')
+    aln_info['seg'] = seg
+    # reconstruct AAs by the codons ...
+    aln_info['aa_ref'] = aln_info['codon_ref'].map(genetic_code)
+    aln_info['aa_snp'] = aln_info['codon_snp'].map(genetic_code)
+    # get KDs by AAs ...
+    aln_info['KD_ref'] = aln_info['aa_ref'].map(KD)
+    aln_info['KD_snp'] = aln_info['aa_snp'].map(KD)
+    # delta KD, snp minus reference ...
+    aln_info['dKD'] = aln_info['KD_snp'] - aln_info['KD_ref']
 
 
-
+result_df = pd.concat( [seg_aln_info[seg][seg_aln_info[seg]['variation']][['seg','genome_pos']] for seg in sorted(seg_aln_info)], ignore_index=True )
+result_df = result_df.drop_duplicates().reset_index(drop=True)
+# then we would need some criteria to select interesting loci and just output them ...
+# let's say now we're interested in all of the variable loci:
+result_df.to_csv(out_fname,index=False)
 
 
 

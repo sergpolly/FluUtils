@@ -48,9 +48,9 @@ class influenza(object):
     #
     def __init__(self, genome_fname, ORF_fname, mutations=None):
         # read influenza genome ...
-        self.genome = dict([ (seq.id,seq.seq) for seq in SeqIO.parse(genome_fname,"fasta") ])
+        self.genome = dict([(seq.id,seq.seq)for seq in SeqIO.parse(genome_fname,"fasta")])
         # length of the segments ...
-        self.seglen = dict( [(segid,len(segseq)) for segid,segseq in self.genome.iteritems() ])
+        self.seglen = dict([(segid,len(self.genome[segid])) for segid in self.genome])
         # genome length ...
         self.genlen = sum(self.seglen.values())
         # number of segments ...
@@ -59,8 +59,6 @@ class influenza(object):
         self.genome_fname = genome_fname
         # just segment's names/ids - whatever ...
         self.segments = sorted(self.seglen.keys())
-        # (-) sense sequence is needed for RNA folding ...
-        self.genome_comp = dict([ (segid,segseq.complement()) for segid,segseq in self.genome.iteritems() ])
         # proteins ...
         # self.segcode = dict([(i,name) for i,name in enumerate(['PB2','PB1','PA','HA','NP','NA','M1/M2','NS1/NEP'])])
         # initialize ORF data using segment id-s from genome_fname file ...
@@ -72,7 +70,7 @@ class influenza(object):
             for line in fp.readlines():
                 line = line.strip().split()
                 #####################################################
-                #  PERFORM SOME SIMPE ORF CHECKS ALONG ...
+                #    PERFORM SOME SIMPE ORF CHECKS ALONG ...
                 #####################################################
                 seg = line[0] # make sure you have the same segment ids in genome_fname and ORF_fname ...
                 # the keys must coincide with the ones from genome_fname file ...
@@ -96,75 +94,158 @@ class influenza(object):
     #
     #
     #
-    def __RNAfold(self,seq_dict,maxBPspan=-1):
-        # inner function to turn dict of sequences to fasta file (or string) ...
-        def local_seq_dict_fasta(seq_dict):
-            return '\n'.join( ">%s\n%s"%(sid,seq) for sid,seq in seq_dict.iteritems() )
-        # inner function to parse output of RNAfold ...
-        def local_parse_RNAfold(output_str):
-            mfe_pat = re.compile("\([^()]+\d+\.\d+\)") # stuff like '( -9.10)' or '(  0.10)' ...
-            out_list = output_str.strip().split('\n') # list of ~3 size: id, seq, RNA structure with MFE
-            sid_struct_mfe_list = [] # storage for results ...
-            # then loop in three-s:
-            # zip(l[::3],l[1::3],l[2::3]) turns l=[1,2,3,4,5,6] to [(1,2,3),(4,5,6)] ...
-            for sid,seq,struct in zip( out_list[::3],out_list[1::3],out_list[2::3] ):
-                sid = sid.strip().strip('<>')
-                search_res = mfe_pat.search(struct)
-                mfe = float(search_res.group().strip('()'))
-                struct = struct[:search_res.start()].strip()
-                sid_struct_mfe_list.append( (sid,(struct,mfe)) )
-            return dict(sid_struct_mfe_list)
-        # now launch RNAfold and collect results ...
-        cmd = ['RNAfold','--maxBPspan',str(maxBPspan)]
-        RNAfold_process = sub.Popen(cmd,stdin=sub.PIPE,stdout=sub.PIPE)
-        output,errput = RNAfold_process.communicate(local_seq_dict_fasta(seq_dict))
-        struct_mfe_dict = local_parse_RNAfold(output)
-        # returning parsed structures with MFE ...
-        return struct_mfe_dict
+    #
+    def __parser_unpaired(self,filename,unpaired):
+        with open(filename,'r') as fp:
+            lines = fp.readlines()
+        #
+        # where to store the data ...
+        data = {}
+        for i in xrange(unpaired):
+            data[i+1] = []
+        #
+        # process unpaired-1 of lines with NA values ...
+        skip = 2
+        convert = (lambda x: float(x) if x!='NA' else None)
+        for line in lines[skip:skip+unpaired-1]:
+            line = line.strip().split()
+            for i,probab in enumerate(line[1:]):
+                data[i+1].append(convert(probab))
+        # process those without NA values ...
+        for line in lines[skip+unpaired-1:]:
+            line = line.strip().split()
+            for i,probab in enumerate(line[1:]):
+                data[i+1].append(float(probab))
+        # data is stored and populated now !
+        return data
     #
     #
     #
-    def __RNALfold(self,seq_dict,window=30):
-        # inner function to turn dict of sequences to fasta file (or string) ...
-        def local_seq_dict_fasta(seq_dict):
-            return '\n'.join( ">%s\n%s"%(sid,seq) for sid,seq in seq_dict.iteritems() )
-        # inner function to parse output of RNAfold (tested & working) ...
-        def local_parse_RNALfold(output_str):
-            hairpin_pat = re.compile("^([\.\(\)]+)\s+\(([^()]+\d+\.\d+)\)\s+(\d+)$") # stuff like ".(((((......))))). ( -6.00)  25" ...
-            out_list_struct_seq = output_str.strip('<>').split('>') # divide them by sequences first ...
-            sid_list = [] # outer storage for results ...
-            for local_struct_str in out_list_struct_seq:
-                hairpin_list = local_struct_str.strip().split('\n')
-                sid = hairpin_list[0].strip()
-                mfe_total = float(hairpin_list[-1].strip().strip('()'))
-                seq = hairpin_list[-2]
-                # the rest: hairpin_list[1:-2] are local structures (hairpins with their mfe and positions) ...
-                parsed_hairpins = []
-                for hairpin_descr in hairpin_list[1:-2]:
-                    hairpin_struct,hairpin_mfe,hairpin_pos = hairpin_pat.match(hairpin_descr).groups()
-                    hairpin_mfe = float(hairpin_mfe)
-                    hairpin_pos = int(hairpin_pos)
-                    parsed_hairpins.append( (hairpin_pos,hairpin_struct,hairpin_mfe,mfe_total) )
-                sid_list.append( (sid,parsed_hairpins) )
-            return dict(sid_list)
-        # now launch RNALfold and collect results ...
-        cmd = ['RNALfold','-L',str(window)]
-        RNALfold_process = sub.Popen(cmd,stdin=sub.PIPE,stdout=sub.PIPE)
-        output,errput = RNALfold_process.communicate(local_seq_dict_fasta(seq_dict))
-        local_struct_dict = local_parse_RNALfold(output)
-        # returning parsed structures with MFE ...
-        return local_struct_dict
+    def __parser_pairhood(self,filename):
+        with open(filename,'r') as fp:
+            lines = fp.readlines()
+        #
+        # where to store the data ...
+        data = {'idx':[],'jdx':[],'p':[]}
+        # parse indexes and probabilities ...
+        for line in lines:
+            i,j,p = line.strip().split()
+            data['idx'].append(int(i))
+            data['jdx'].append(int(j))
+            data['p'].append(float(p))
+        # data is stored and populated now !
+        return data
     #
+    #
+    #
+    def calculate_rna_profiles(self,genome_fname,window=70,length=50,unpaired=3,pairing=False,unpairing=True):
+        # to get the unpaired probabilities ...
+        # cat H1N1FULL.fa |RNAplfold -W70 -L50 -u3
+        # generates dp.ps files along with the _lunp(what we need) files
+        #
+        #
+        # to get the probabilities of pairing for nucs i,j based on the entire ensemble ...
+        # cat H1N1FULL.fa |RNAplfold -W70 -L50 -o
+        # generates _basepairs COO sparse matrix style - really easy to parse! (i j probab), i<j
+        #
+        #
+        # file prefixes are segment ids !, so that's really handy as well.
+        # 
+        # entire fasta file with multiple sequences can be submitted to the program >
+        # number of output files will match the number of fasta entries in the file!
+        #
+        cmd_unpaired = "cat %s | RNAplfold -W%d -L%d -u%d  >/dev/null 2>/dev/null"%(genome_fname,window,length,unpaired)
+        cmd_pairhood = "cat %s | RNAplfold -W%d -L%d -o    >/dev/null 2>/dev/null"%(genome_fname,window,length)
+        # get unpaired stats ...
+        if pairing:
+            retcode = sub.call(cmd_pairhood,shell=True)
+            if retcode:
+                print >> sys.stderr, "RNAplfold failed! RNA profile is not generated"
+                return
+            # now we have all these files available for us to parse ...
+            pairhood_fnames = dict([ (name,"%s_basepairs"%name) for name in self.genome])
+            #
+            # now let's deal with the pairhood probabilities ...
+            pairhood_data = {}
+            for seg in pairhood_fnames:
+                pairhood_data[seg] = self.__parser_pairhood(pairhood_fnames[seg])
+            self.rna_pairhood = pairhood_data
+        #
+        #
+        # extract unpaired probabilities ...
+        if unpairing:
+            retcode = sub.call(cmd_unpaired,shell=True)
+            if retcode:
+                print >> sys.stderr, "RNAplfold failed! RNA profile is not generated"
+                return
+            # now we have all these files available for us to parse ...
+            unpaired_fnames = dict([ (name,"%s_lunp"%name) for name in self.genome])
+            #
+            # generate 'unpaired'-number of empty dictionaries here ...
+            unpaired_data = dict([ (l,{}) for l in range(1,unpaired+1) ])
+            for seg in unpaired_fnames: 
+                parsed_data = self.__parser_unpaired(unpaired_fnames[seg],unpaired)
+                for l in range(1,unpaired+1):
+                    unpaired_data[l][seg] = parsed_data[l]
+            # unpaired data structured by the l number first, and then by the segment ...
+            self.rna_unpaired = unpaired_data
+    # 
+    #
+    # 
+    def calculate_rna_lMFE(self,length=50):
+        #
+        genome_fname=self.genome_fname
+        #
+        cmd_lMFE = "cat %s | RNALfold -L%d"%(genome_fname,length)
+        #
+        try:
+            out = sub.check_output(cmd_lMFE,shell=True)
+        except sub.CalledProcessError:
+            print "could not run '%s'"%cmd_lMFE
+            return
+        #
+        #
+        out_by_seg = {}
+        # strip and split output segment by segment ...
+        for lmfe_lines in out.strip().strip('>').split('>'):
+            # for each segment - split data by newline ...
+            lmfe_lines = lmfe_lines.strip().split('\n')
+            # first line is the segment name ...
+            seg = lmfe_lines[0]
+            # the all but the last two lines are the local MFEs in dot-bracket format with dG and a starting point ...
+            lmfes = lmfe_lines[1:-2]
+            # lmfe_lines[-2:] - is just RNA sequence and some kind of total energy or something ...
+            data = []
+            for lmfe in lmfes:
+                # replace('( ','(') will fight the situation ( -0.45) vs (-10.20) ...
+                # yet (  0.11) will fail then - LOOK FOR IT ...
+                item = lmfe.replace('( ','(').split()
+                if len(item) != 3:
+                    print "could not parse local MFE: %s"%lmfe
+                    return
+                # parse that stuff and store in an array ...
+                structure = item[0]
+                str_len = len(structure)
+                delta_g = float(item[1].strip('()'))
+                start = int(item[2])
+                data.append((structure,start,str_len,delta_g))
+            out_by_seg[seg] = data
+        ############################################
+        #
+        # strore it in the self stuff ...
+        self.local_MFE = out_by_seg
+    # 
     #
     # Local MFE example output ...
-    ###################################################################
+    #
+    #
     # >seg8_H1N1FULL
     # .(((((((((...)))))..)))). ( -7.90)  123
     # .((((.....(((((...))))).....)))). (-10.30)  118
     # .((....)). ( -1.60)    1
     # AGCGAAAGCAGGGUGGCAAAGACAUAAUGGAUUCCCACACUGUGUAC...
     #  (-199.00)
-    ###################################################################
+    #
     # segments are overlapping or not ?!
     def __get_overlap(self,interval1,interval2):
         idx1,start1,str_len1 = interval1
@@ -175,194 +256,6 @@ class influenza(object):
         L = max(start1, start2)
         R = min(start1+(str_len1-1), start2+(str_len2-1))
         return (L <= R)
-    #
-    def __get_overlap_matrix(self,hairpin_df):
-        # this function tested and produces meaningful results ...
-        def local_get_overlap(starts,lens):
-            # check universality of the function ...
-            start1,start2 = starts
-            len1,len2 = lens
-            # L = max(A.left,B.left)
-            # R = min(A.right,B.right)
-            # L <= R - <=> intersection!!! overlap
-            L = max(start1, start2)
-            R = min(start1+(len1-1), start2+(len2-1))
-            return (L <= R)
-        #
-        hairpin_list = list( hairpin_df[['start','struct_len']].itertuples() )
-        hairpin_list_len = len(hairpin_list)
-        #
-        # storage in COO format ...
-        overmat = {}
-        overmat['row'],overmat['col'],overmat['val'] = [],[],[]
-        #
-        for i in range(hairpin_list_len):
-            for j in range(i+1,hairpin_list_len):
-                idx,istart,ilen = hairpin_list[i]
-                jdx,jstart,jlen = hairpin_list[j]
-                # if these hairpins are overlaping ...
-                if local_get_overlap( (istart,jstart), (ilen,jlen) ):
-                    overmat['row'].append(idx)
-                    overmat['col'].append(jdx)
-                    overmat['val'].append(1)
-                    # flip i,j, because matrix is symmetric ...
-                    overmat['row'].append(jdx)
-                    overmat['col'].append(idx)
-                    overmat['val'].append(1)
-                    # add i,i ...
-                    overmat['row'].append(idx)
-                    overmat['col'].append(idx)
-                    overmat['val'].append(1)
-                    # add j,j ...
-                    overmat['row'].append(jdx)
-                    overmat['col'].append(jdx)
-                    overmat['val'].append(1)
-                    #################################################################
-                    #  DUPLICATES MUST BE ERASED PRIOR PROCEEDING ...
-                    #################################################################
-        # pairwise overlaps are established, returing COO matrix ...
-        return overmat
-    #
-    def __optimize_overlap_glpk(self,overmat,objective,uniq_id,bip_path='./rnaglpk/svbin'):
-        fname_obj = "%s_objective.dat"%uniq_id
-        fname_cst = "%s_sparse.dat"%uniq_id
-        # number of constraints ...
-        overmat_size = len(overmat['val'])
-        objective_size = objective.size
-        ##################################################
-        # writing the sparse matrix of the constraints ...
-        with open(fname_cst,'w') as fp:
-            # let's write the total number of lines at first:
-            fp.write("%d\n"%overmat_size)
-            # sparse matrix of constraints is to follow (mind 1-based indexing of GLPK) ...
-            for index,i,j,v in zip(range(overmat_size),overmat['row'], overmat['col'], overmat['val']):
-                fp.write("%d a_%d_%d %d %d %d\n" % (index+1,i+1,j+1,i+1,j+1,v))
-        ###################################################
-        # objective coefficients ...
-        with open(fname_obj,'w') as fp:
-            # total number of items first ...
-            fp.write("%d\n"%objective_size)
-            # all items second ...
-            for index,obj_coeff in enumerate(objective):
-                fp.write("%d a_%d %.2f\n" % (index+1,index+1,obj_coeff))
-        # run the optimizer ...
-        cmd = "%s %s %s"%( os.path.join(bip_path,'run_bip'), fname_obj, fname_cst )
-        result = sub.check_output(cmd,shell=True)
-        # read last 'objective_size' lines from the result ...
-        result_out = np.asarray( [ int(i) for i in result.strip().split('\n')[-objective_size:] ] )
-        # return included hairpir coefficients ...
-        return result_out
-    #
-    #
-    #
-    #
-    def __RNALfold_opt(self,seq_dict,dg_NP,windows=[24,36,]):
-        # calculate local RNA structure using RNALfold ...
-        df_mfe = []
-        for length in windows:
-            # tmp_mfe = self.__RNALfold(seq_dict,window=length)
-            tmp_mfe = __RNALfold(self,seq_dict,window=length)
-            for sid in seq_dict:
-                tmp_df = pd.DataFrame(tmp_mfe[sid],columns=['start','struct','mfe','opt_mfe'])
-                tmp_df['window'] = length
-                tmp_df['seq_id'] = sid
-                df_mfe.append(tmp_df)
-        lfold_mfe = pd.concat(df_mfe,ignore_index=True)
-        ###################################################
-        # WARNING! some structures include unpaired flanks .(). , some of them do not: .() or (). 
-        # all that affects start position and struct_len.
-        #
-        # (1) adjust starting position accordingly: +1 for all .() and .().; keep 1-indexing for now...
-        lfold_mfe['start'] += lfold_mfe['struct'].str.startswith('.').apply(int)
-        # (2) strip those unpaired flanks '.', to enforce matching ends for all ((...))
-        lfold_mfe['struct'] = lfold_mfe['struct'].str.strip('.')
-        # (3) get the structure length finally ...
-        lfold_mfe['struct_len'] = lfold_mfe['struct'].str.len()
-        # (4) calculate hairpin MFE or dG per nucleotide ...
-        lfold_mfe['mfe_per_nt'] = lfold_mfe['mfe']/lfold_mfe['struct_len']
-        # (5) calculate objective coefficients for optimizaiton (MFE corrected to NP attraction)...
-        lfold_mfe['objective_mfe'] = (lfold_mfe['mfe_per_nt'] - dg_NP)*lfold_mfe['struct_len']
-        # lfold_mfe is a mixed DataFrame with all the seq_id and all window lengths ...
-        #
-        #
-        # ... SEVERAL SCENARIOS ARE POSSIBLE FROM THIS POINT ...
-        # (1) drop all hairpoins yielded by Lfolding with different window lengths (Do this before, probably) ...
-        lfold_mfe = lfold_mfe.drop_duplicates(subset=[col for col in lfold_mfe.columns if (col not in ['window','opt_mfe']) ])
-        # (2) drop those hairpins, melted by NP ...
-        lfold_mfe = lfold_mfe[ lfold_mfe['objective_mfe']<0.0 ]
-        # (3) reset index, just in case ...
-        lfold_mfe = lfold_mfe.reset_index(drop=True)
-        #
-        # Next, we would need to fill in overlap matrix ...
-        lfold_sid = lfold_mfe.groupby('seq_id')
-        # loop over structure/set of hairpins corresponding to a particular 'sid'
-        for sid in lfold_sid.groups:
-            lfold_mfe_sid = lfold_sid.get_group(sid).sort(columns='start').reset_index(drop=True)
-            overmat_sid = self.__get_overlap_matrix(lfold_mfe_sid) # modify later, to avoid copying the whole 'lfold_mfe_sid' ...
-            # overmat is a dict with 'row','col' and 'val' keys ...
-            hairpin_opt_list = self.__optimize_overlap_glpk(overmat_sid,lfold_mfe_sid['objective_mfe'],sid,bip_path='./rnaglpk/svbin') # change path later on ...
-            # 0,1-mask vector describing hairpins in optimal structure ...
-        #
-        ################################################################################
-        #   OLD STUFF FOLLOWS, TO BE REWRITTEN ...
-        # path = r"./Dropbox (UMASS MED - BIB)/CellSupProject/cellsup2015_with_RNA/rnaglpk/svbin"
-        ################################################################################
-        # now store that MFE object dictionary as an influenza class attribute ...
-        self.optimal_MFE = mfe
-        #
-        #
-        # we'd also calculate the dg profile over each segment: 0 if NP-bound, dg(per nucleotide) if belongs to some stable structure ...
-        #
-        dg_profile = {}
-        pairing_profile = {}
-        loops_profile = {}
-        mfe_loops = {}
-        #
-        pairing_dict = {'.':1,'(':2,')':2}
-        # big hairpin loops of 4 nt and more ...
-        big_loop = re.compile('\.{4,}')
-        #
-        # now let's try to plot that stuff ...
-        for seg in self.segments:
-            seglen = self.seglen[seg]
-            # take only those RNA that've been selected by optimizer ...
-            seg_struct = mfe[seg][mfe[seg]['inc_rna']==1]
-            # let's generate RNA profiles based on the optimized results ...
-            # print seglen
-            dg_profile[seg] = np.zeros(seglen)
-            pairing_profile[seg] = np.zeros(seglen,dtype = np.int)
-            loops_profile[seg] = np.zeros(seglen,dtype = np.int)
-            mfe_loops[seg] = []
-            #
-            for dat in seg_struct.iterrows():
-                struct = dat[1]['struct']
-                start = dat[1]['start']
-                str_len = dat[1]['str_len']
-                dg_nuc = dat[1]['dg_nuc']
-                # search big loops ...
-                for res in big_loop.finditer(struct):
-                    # the profile of big loops, those potentially available for intersegmental pairing ...
-                    loops_profile[seg][start+res.start():start+res.end()] = 1
-                    #  sequences of those big loops, just to look at who they really are ...
-                    mfe_loops[seg].append(( start+res.start(), self.genome[seg][start+res.start():start+res.end()] ))
-                    #
-                dg_profile[seg][start:start+str_len] = dg_nuc
-                pairing_profile[seg][start:start+str_len] = [ pairing_dict[char] for char in struct[1:-1] ]
-                # maybe struct[1:-1] if 0 and -1 are '.'
-        #
-        # now store that as an influenza class attribute ...
-        self.dg_profile = dg_profile
-        self.pair_profile = pairing_profile
-        self.loops_profile = loops_profile
-        self.loops = mfe_loops
-
-
-
-
-
-    #
-    #
-    #
     #
     # calculate local RNA profile of a flu genome taking NP attraction into account(dg_NP threshold) ... 
     def calculate_rna_lMFE_optimized(self, dg_NP, windows=[24,36,]):

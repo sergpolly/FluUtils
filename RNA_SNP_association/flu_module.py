@@ -96,7 +96,7 @@ class influenza(object):
     #
     #
     #
-    def __RNAfold(self,seq_dict,maxBPspan=-1):
+    # def __RNAfold(self,seq_dict,maxBPspan=-1):
         # inner function to turn dict of sequences to fasta file (or string) ...
         def local_seq_dict_fasta(seq_dict):
             return '\n'.join( ">%s\n%s"%(sid,seq) for sid,seq in seq_dict.iteritems() )
@@ -178,6 +178,8 @@ class influenza(object):
     #
     def __get_overlap_matrix(self,hairpin_df):
         # this function tested and produces meaningful results ...
+        # BEWARE!
+        # we don't need overlap matrix itself other than for illustration purposes
         def local_get_overlap(starts,lens):
             # check universality of the function ...
             start1,start2 = starts
@@ -192,42 +194,71 @@ class influenza(object):
         hairpin_list = list( hairpin_df[['start','struct_len']].itertuples() )
         hairpin_list_len = len(hairpin_list)
         #
-        # storage in COO format ...
-        overmat = {}
-        overmat['row'],overmat['col'],overmat['val'] = [],[],[]
-        #
+        # 'hairpin_list_len' by 'hairpin_list_len' matrix of zeros to be filled in ...
+        overmat = np.zeros((hairpin_list_len,hairpin_list_len),dtype=np.int)
         for i in range(hairpin_list_len):
             for j in range(i+1,hairpin_list_len):
                 idx,istart,ilen = hairpin_list[i]
                 jdx,jstart,jlen = hairpin_list[j]
                 # if these hairpins are overlaping ...
                 if local_get_overlap( (istart,jstart), (ilen,jlen) ):
-                    overmat['row'].append(idx)
-                    overmat['col'].append(jdx)
-                    overmat['val'].append(1)
-                    # flip i,j, because matrix is symmetric ...
-                    overmat['row'].append(jdx)
-                    overmat['col'].append(idx)
-                    overmat['val'].append(1)
-                    # add i,i ...
-                    overmat['row'].append(idx)
-                    overmat['col'].append(idx)
-                    overmat['val'].append(1)
-                    # add j,j ...
-                    overmat['row'].append(jdx)
-                    overmat['col'].append(jdx)
-                    overmat['val'].append(1)
-                    #################################################################
-                    #  DUPLICATES MUST BE ERASED PRIOR PROCEEDING ...
-                    #################################################################
-        # pairwise overlaps are established, returing COO matrix ...
+                    overmat[idx,idx] = 1
+                    overmat[jdx,jdx] = 1
+                    overmat[idx,jdx] = 1
+                    overmat[jdx,idx] = 1
         return overmat
+    #
+    #
+    def __get_constraint_matrix(self,hairpin_df):
+        # this function tested and produces meaningful results ...
+        # BEWARE!
+        # Constraint matrix is different from symmetric overlap matrix.
+        # Constraint one is needed to solve MIP (optimization) problem.
+        # see github wiki for elaborate discussion ...
+        def local_get_overlap(starts,lens):
+            # check universality of the function ...
+            start1,start2 = starts
+            len1,len2 = lens
+            # L = max(A.left,B.left)
+            # R = min(A.right,B.right)
+            # L <= R - <=> intersection!!! overlap
+            L = max(start1, start2)
+            R = min(start1+(len1-1), start2+(len2-1))
+            return (L <= R)
+        #
+        hairpin_list = list( hairpin_df[['start','struct_len']].itertuples() )
+        hairpin_list_len = len(hairpin_list)
+        #
+        constramat = []
+        for i in range(hairpin_list_len):
+            for j in range(i+1,hairpin_list_len):
+                idx,istart,ilen = hairpin_list[i]
+                jdx,jstart,jlen = hairpin_list[j]
+                # if these hairpins are overlaping ...
+                if local_get_overlap( (istart,jstart), (ilen,jlen) ):
+                    # THIS IS VERY IMPORTANT: PROPER WAY TO FILL IN CONSTRAINT MATRIX  ...
+                    # embrace pair-wise constraint description. Simply list all mutatually exclusive hairpins ...
+                    tmp_vec = np.zeros(hairpin_list_len,dtype=np.int)
+                    tmp_vec[idx] = 1
+                    tmp_vec[jdx] = 1
+                    constramat.append(tmp_vec)
+        # to matrix from a list of vectors ...
+        constramat = np.asarray(constramat,dtype=np.int)
+        # dense matrix is filled. Get the COO representation for the matrix ...
+        constramat_coo = sparse.coo_matrix(constramat)
+        # 'row': constramat_coo.row
+        # 'col': constramat_coo.col
+        # 'val': constramat_coo.data
+        # pairwise overlaps are established, returing COO matrix ...
+        return constramat_coo
+    #
+    #
     #
     def __optimize_overlap_glpk(self,overmat,objective,uniq_id,bip_path='./rnaglpk/svbin'):
         fname_obj = "%s_objective.dat"%uniq_id
         fname_cst = "%s_sparse.dat"%uniq_id
         # number of constraints ...
-        overmat_size = len(overmat['val'])
+        overmat_size = len(overmat.data)
         objective_size = objective.size
         ##################################################
         # writing the sparse matrix of the constraints ...
@@ -235,7 +266,7 @@ class influenza(object):
             # let's write the total number of lines at first:
             fp.write("%d\n"%overmat_size)
             # sparse matrix of constraints is to follow (mind 1-based indexing of GLPK) ...
-            for index,i,j,v in zip(range(overmat_size),overmat['row'], overmat['col'], overmat['val']):
+            for index,i,j,v in zip(range(overmat_size),overmat.row, overmat.col, overmat.data):
                 fp.write("%d a_%d_%d %d %d %d\n" % (index+1,i+1,j+1,i+1,j+1,v))
         ###################################################
         # objective coefficients ...
@@ -295,6 +326,11 @@ class influenza(object):
         #
         # Next, we would need to fill in overlap matrix ...
         lfold_sid = lfold_mfe.groupby('seq_id')
+        #
+        # UNDER CONSTRUCTION ....
+        return lfold_sid
+        #
+        #
         # loop over structure/set of hairpins corresponding to a particular 'sid'
         for sid in lfold_sid.groups:
             lfold_mfe_sid = lfold_sid.get_group(sid).sort(columns='start').reset_index(drop=True)
@@ -306,6 +342,7 @@ class influenza(object):
         ################################################################################
         #   OLD STUFF FOLLOWS, TO BE REWRITTEN ...
         # path = r"./Dropbox (UMASS MED - BIB)/CellSupProject/cellsup2015_with_RNA/rnaglpk/svbin"
+        # path = r"./Dropbox\ \(UMASS\ MED\ -\ BIB\)/CellSupProject/cellsup2015_with_RNA/rnaglpk/svbin"
         ################################################################################
         # now store that MFE object dictionary as an influenza class attribute ...
         self.optimal_MFE = mfe

@@ -1,0 +1,143 @@
+>Feature seg1_H3N2FULL
+28	2307	gene		
+			gene	PB2
+28	2307	CDS		
+			product	polymerase PB2
+			protein_id	seg1_H3N2FULLp1
+			gene	PB2
+    
+ INFO: Length: 2341 nucleotides
+ INFO: Segment: 1 (PB2)
+ INFO: Sequence completeness: protein 1 - complete; nucleotide - complete
+ INFO: This sequence (seg1_H3N2FULL) contains following signature mutation(s) that might confer high virulence of the virus: (E627K)
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg2_H3N2FULL
+25	2298	gene		
+			gene	PB1
+25	2298	CDS		
+			product	polymerase PB1
+			protein_id	seg2_H3N2FULLp1
+			gene	PB1
+119	391	gene		
+			gene	PB1-F2
+119	391	CDS		
+			product	PB1-F2 protein
+			protein_id	seg2_H3N2FULLp2
+			gene	PB1-F2
+    
+ INFO: Length: 2341 nucleotides
+ INFO: Segment: 2 (PB1)
+ INFO: Sequence completeness: protein 1 - complete; protein 2 - complete; nucleotide - complete
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg3_H3N2FULL
+25	2175	gene		
+			gene	PA
+25	2175	CDS		
+			product	polymerase PA
+			protein_id	seg3_H3N2FULLp1
+			gene	PA
+25	784	gene		
+			gene	PA-X
+25	594	CDS		
+596	784			
+			product	PA-X protein
+			protein_id	seg3_H3N2FULLp2
+			exception	ribosomal slippage
+			gene	PA-X
+    
+ INFO: Length: 2233 nucleotides
+ INFO: Segment: 3 (PA)
+ INFO: Sequence completeness: protein 1 - complete; protein 2 - complete; nucleotide - complete
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg4_H3N2FULL
+29	1729	gene		
+			gene	HA
+29	1729	CDS		
+			product	hemagglutinin
+			protein_id	seg4_H3N2FULLp1
+			function	receptor binding and fusion protein
+			gene	HA
+29	76	sig_peptide
+77	1063	mat_peptide
+			product HA1
+1064	1726	mat_peptide
+			product HA2
+    
+ INFO: Length: 1761 nucleotides
+ INFO: Segment: 4 (HA)
+ INFO: Sequence completeness: protein 1 - complete; nucleotide - complete
+ INFO: Serotype: H3
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg5_H3N2FULL
+45	1541	gene		
+			gene	NP
+45	1541	CDS		
+			product	nucleocapsid protein
+			protein_id	seg5_H3N2FULLp1
+			gene	NP
+    
+ INFO: Length: 1565 nucleotides
+ INFO: Segment: 5 (NP)
+ INFO: Sequence completeness: protein 1 - complete; nucleotide - complete
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg6_H3N2FULL
+19	1428	gene		
+			gene	NA
+19	1428	CDS		
+			product	neuraminidase
+			protein_id	seg6_H3N2FULLp1
+			gene	NA
+    
+ INFO: Length: 1466 nucleotides
+ INFO: Segment: 6 (NA)
+ INFO: Sequence completeness: protein 1 - complete; nucleotide - complete
+ INFO: Serotype: N2
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg7_H3N2FULL
+26	784	gene		
+			gene	M1
+26	784	CDS		
+			product	matrix protein 1
+			protein_id	seg7_H3N2FULLp1
+			gene	M1
+26	1007	gene		
+			gene	M2
+26	51	CDS		
+740	1007			
+			product	matrix protein 2
+			protein_id	seg7_H3N2FULLp2
+			gene	M2
+    
+ INFO: Length: 1027 nucleotides
+ INFO: Segment: 7 (MP)
+ INFO: Sequence completeness: protein 1 - complete; protein 2 - complete; nucleotide - complete
+ INFO: This sequence (seg7_H3N2FULL) contains following signature mutation(s) that might confer amantadine resistance: (S31N)
+ INFO: Virus type: influenza A
+===================================================================
+>Feature seg8_H3N2FULL
+27	719	gene		
+			gene	NS1
+27	719	CDS		
+			product	nonstructural protein 1
+			protein_id	seg8_H3N2FULLp1
+			gene	NS1
+27	864	gene		
+			gene	NEP
+			gene_syn	NS2
+27	56	CDS		
+529	864			
+			product	nuclear export protein
+			note	nonstructural protein 2
+			protein_id	seg8_H3N2FULLp2
+			gene	NEP
+    
+ INFO: Length: 890 nucleotides
+ INFO: Segment: 8 (NS)
+ INFO: Sequence completeness: protein 1 - complete; protein 2 - complete; nucleotide - complete
+ INFO: Virus type: influenza A

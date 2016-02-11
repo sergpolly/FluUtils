@@ -115,9 +115,11 @@ def isin_orf(orf,pos):
 
 
 
+# # genome_fname = "../FluGenomes/H1N1FULL.fa"
 # genome_fname = "../FluGenomes/H1N1FULL.fa"
-genome_fname = "../FluGenomes/H1N1FULL.fa"
-orf_fname = "../FluGenomes/xlator_data/H1N1FULL.orf"
+# orf_fname = "../FluGenomes/xlator_data/H1N1FULL.orf"
+genome_fname = "../FluGenomes/H3N2FULL.fa"
+orf_fname = "../FluGenomes/xlator_data/H3N2FULL.orf"
 #
 
 

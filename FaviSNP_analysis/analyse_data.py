@@ -3,7 +3,6 @@ import re
 import os
 # import string
 import numpy as np
-# import pandas as pd
 import subprocess as sub
 from Bio import SeqIO
 from Bio.Data import CodonTable
@@ -13,7 +12,8 @@ import pandas as pd
 # import flu_module as flu
 from Bio import SeqIO
 from Bio.Data import CodonTable
-
+import itertools
+import matplotlib.pyplot as plt
 
 
 
@@ -160,20 +160,84 @@ def getSNPdensity(df,fst,dst):
     return count/float(count_tot)
 
 
-# def getSNPcountBY(df,fst,dst,by):
-#     count = df[(df['freq']>fst)&(df['cover']>dst)
-#     count 
+def get_drug_type(drug_tuple):
+    ost,favi,ribo = drug_tuple
+    ost = float( ost.lstrip('OS') )
+    favi = float( favi.lstrip('F') )
+    ribo = float( ribo.lstrip('R') )
+    if (ost<1e-4)and(favi<1e-4)and(ribo<1e-4):
+        return "NOdrug"
+    elif ost>1e-4:
+        return "OSelt"
+    elif favi>1e-4:
+        return "Favi"
+    elif ribo>1e-4:
+        return "Ribo"
+    else:
+        print "Supposedly, there are no mixtures of drugs in the data ..."
+        print "Termination!"
+        sys.exit(1)
+
+#####################################
+# # group run_data by drug presence/concentration 'OS' 'Favi' 'Ribo'
+# run_drug_group = run_data.groupby(by=['OS','Favi','Ribo'])
+# runid_grouped = run_drug_group['runid_exist']
+run_data['drug'] = run_data[['OS','Favi','Ribo']].apply(get_drug_type,axis=1)
+run_drug_group = run_data.groupby(by='drug')
+runid_grouped = run_drug_group['runid_exist']
+colors = itertools.cycle(["r", "b", "g"])
+
+
+def bar_grouped_drug(drug_group,fst,dst):
+    # for rects1 = ax.bar(ind, menMeans, width, color='r', yerr=menStd)
+    x_ind = 0
+    bar_width = 0.3
+    x_ticks = []
+    for drug, runid_exist in drug_group:
+        tick_shift = 0
+        color = next(colors)
+        for runid in runid_exist:
+            bar_height = getSNPcount(snp_info[runid],fst,dst)
+            plt.bar(x_ind,bar_height,bar_width,color=color)
+            x_ind += bar_width
+            tick_shift += bar_width
+        # collect x tciks just in case ...
+        x_ticks.append( (drug,x_ind-0.5*tick_shift) )
+        x_ind += 3.0*bar_width # make a gap between the groups ...
+    #
+    labels,ticks_pos = zip(*x_ticks)
+    ax = plt.gca()
+    ax.set_xticks(ticks_pos)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel('SNP count')
+    ax.set_xlabel('drug group')
+    ax.set_title('made for d>%.1f and f>%.4f'%(dst,fst))
+    plt.show()
 
 
 
-# # runid = '1359'
-# unrolled_SNP = sum(( unroll_SNPs(row) for row in snp_info[runid].itertuples(index=False) ),[])
+fst_list = [0.005,0.01,0.3]
+dst_list = [100,200,500,1000]
+# let's create a pandas PANEL  of SNP counts with items - runids, major axis d_star and minor axis f_star ...
+to_panel = {}
+for runid in run_data['runid_exist']:
+    to_panel[runid] = {}
+    for dst in dst_list:
+        to_panel[runid][dst] = {}
+        for fst in fst_list:
+            value = getSNPcount(snp_info[runid],fst,dst)
+            # print runid,fst,dst,value
+            # to_panel[runid][dst].append( value )
+            to_panel[runid][dst][fst] = value
+
+# make it a panel with corresponding indexes ...
+rdf_panel = pd.Panel(to_panel)
+
+
+# rdf_panel['981'].loc[0.010,100]
 
 
 
-
-# sss = [snp_info[runid].iloc[0]['seg'] for runid in run_data['runid_exist'] if snp_info[runid].iloc[0]['seg']=='seg1_H3N2FULL']
-# # snp_info[runid] = pd.read_csv("%s.csv"%str(runid))
 
 
 
